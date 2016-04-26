@@ -4,9 +4,11 @@ Small tool to discover VXI-11 cabable measurement devices using broadcasts
 To discover the devices on your network just run:
 
 $> make
+
 $> ./vxi_discover -b
 
 You can also query for the VXI-11 RPC service using unicast:
+
 $> ./vxi_discover 192.168.1.20
 
 ## How it works
