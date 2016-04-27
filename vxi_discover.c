@@ -128,6 +128,99 @@ reply:
         Port: variable
 #endif
 
+
+void send_rpc_broadcast_ipv4(int sockfd, struct iovec* io, const struct ifaddrs *ifp)
+{
+    struct sockaddr_in* srcaddr = (struct sockaddr_in*)ifp->ifa_addr;
+    struct sockaddr_in* broadaddr = (struct sockaddr_in*)ifp->ifa_broadaddr;
+    struct sockaddr_in destaddr;
+    struct msghdr msgh;
+    struct cmsghdr *cmsg;
+    size_t ctlbuf[128];
+    struct in_pktinfo* pktinfo;
+    char srcbuf[INET6_ADDRSTRLEN];
+    char destbuf[INET6_ADDRSTRLEN];
+
+    memset(&destaddr, 0, sizeof(destaddr));
+    memset(&msgh, 0, sizeof(msgh));
+    memset(ctlbuf, 0, sizeof(ctlbuf));
+
+    msgh.msg_name = &destaddr;
+    msgh.msg_namelen = sizeof(destaddr);
+    msgh.msg_iov = io;
+    msgh.msg_iovlen = 1;
+    msgh.msg_control = ctlbuf;
+    msgh.msg_controllen = sizeof(ctlbuf);
+
+    cmsg = CMSG_FIRSTHDR(&msgh);
+    cmsg->cmsg_len = CMSG_LEN(sizeof(*pktinfo));
+    cmsg->cmsg_level = IPPROTO_IP;
+    cmsg->cmsg_type = IP_PKTINFO;
+    msgh.msg_controllen = CMSG_SPACE(sizeof(*pktinfo));
+
+    /* Set destination */
+    destaddr.sin_family = AF_INET;
+    destaddr.sin_port = htons(PMAPPORT);
+    memcpy(&destaddr.sin_addr, &broadaddr->sin_addr, sizeof(destaddr.sin_addr));
+
+    /* Set source */
+    pktinfo = (struct in_pktinfo*) CMSG_DATA(cmsg);
+    memcpy(&pktinfo->ipi_spec_dst.s_addr, &srcaddr->sin_addr, sizeof(srcaddr->sin_addr));
+
+    if ((inet_ntop(AF_INET, &srcaddr->sin_addr, srcbuf, INET6_ADDRSTRLEN) != NULL) &&
+        (inet_ntop(AF_INET, &destaddr.sin_addr, destbuf, INET6_ADDRSTRLEN) != NULL))
+            fprintf(stderr, "%12s: %s -> %s\n", ifp->ifa_name, srcbuf, destbuf);
+
+    sendmsg(sockfd, &msgh, 0);
+}
+
+void send_rpc_broadcast_ipv6(int sockfd, struct iovec* io, const struct ifaddrs *ifp)
+{
+    struct sockaddr_in6* srcaddr = (struct sockaddr_in6*)ifp->ifa_addr;
+    struct sockaddr_in6* broadaddr = (struct sockaddr_in6*)ifp->ifa_broadaddr;
+    struct sockaddr_in6 destaddr;
+    struct msghdr msgh;
+    struct cmsghdr *cmsg;
+    size_t ctlbuf[128];
+    struct in6_pktinfo* pktinfo;
+    char srcbuf[INET6_ADDRSTRLEN];
+    char destbuf[INET6_ADDRSTRLEN];
+
+    memset(&destaddr, 0, sizeof(destaddr));
+    memset(&msgh, 0, sizeof(msgh));
+    memset(ctlbuf, 0, sizeof(ctlbuf));
+
+    msgh.msg_name = &destaddr;
+    msgh.msg_namelen = sizeof(destaddr);
+    msgh.msg_iov = io;
+    msgh.msg_iovlen = 1;
+    msgh.msg_control = ctlbuf;
+    msgh.msg_controllen = sizeof(ctlbuf);
+
+    cmsg = CMSG_FIRSTHDR(&msgh);
+    cmsg->cmsg_len = CMSG_LEN(sizeof(*pktinfo));
+    cmsg->cmsg_level = IPPROTO_IPV6;
+    cmsg->cmsg_type = IPV6_PKTINFO;
+    msgh.msg_controllen = CMSG_SPACE(sizeof(*pktinfo));
+
+    /* Set destination */
+    destaddr.sin6_family = AF_INET6;
+    destaddr.sin6_port = htons(PMAPPORT);
+    inet_pton(AF_INET6, "FF02::202", &destaddr.sin6_addr);
+
+    /* Set source */
+    pktinfo = (struct in6_pktinfo*) CMSG_DATA(cmsg);
+    memcpy(&pktinfo->ipi6_addr, &srcaddr->sin6_addr, sizeof(srcaddr->sin6_addr));
+    if (srcaddr->sin6_scope_id)
+        pktinfo->ipi6_ifindex = srcaddr->sin6_scope_id;
+
+    if ((inet_ntop(AF_INET6, &srcaddr->sin6_addr, srcbuf, INET6_ADDRSTRLEN) != NULL) &&
+        (inet_ntop(AF_INET6, &destaddr.sin6_addr, destbuf, INET6_ADDRSTRLEN) != NULL))
+            fprintf(stderr, "%12s: %s -> %s\n", ifp->ifa_name, srcbuf, destbuf);
+
+    sendmsg(sockfd, &msgh, 0);
+}
+
 int main(int argc, char* argv[])
 {
     struct sockaddr_in sock = {
@@ -175,81 +268,21 @@ int main(int argc, char* argv[])
         if (getifaddrs(&ifap) != 0)
             exit(EXIT_FAILURE);
 
-        struct sockaddr_storage address;
-        size_t ctlbuf[128];
-        struct iovec io;
-        struct msghdr msgh;
-        struct cmsghdr *cmsg;
 
-        char addrbuf[INET6_ADDRSTRLEN];
         for (ifp = ifap; ifp; ifp = ifp->ifa_next) {
+            struct iovec io;
+
             if ((ifp->ifa_flags & (IFF_MULTICAST | IFF_BROADCAST)) == 0)
                 continue;
-
-            memset(&address, 0, sizeof(address));
-            memset(&msgh, 0, sizeof(msgh));
-            msgh.msg_name = &address;
-            msgh.msg_iov = &io;
-            msgh.msg_iovlen = 1;
-            msgh.msg_control = ctlbuf;
-            msgh.msg_controllen = sizeof(ctlbuf);
 
             io.iov_base = &buf;
             io.iov_len = xdr_getpos(&xdr);
 
-            memset(ctlbuf, 0, sizeof(ctlbuf));
-            cmsg = CMSG_FIRSTHDR(&msgh);
+            if (ifp->ifa_addr->sa_family == AF_INET)
+                send_rpc_broadcast_ipv4(udp_socket, &io, ifp);
+            else if (ifp->ifa_addr->sa_family == AF_INET6)
+                send_rpc_broadcast_ipv6(udp_socket, &io, ifp);
 
-            if (ifp->ifa_addr->sa_family == AF_INET) {
-                struct sockaddr_in* inaddr = (struct sockaddr_in*)&address;
-                struct sockaddr_in* srcaddr = (struct sockaddr_in*)ifp->ifa_addr;
-                struct sockaddr_in* broadaddr = (struct sockaddr_in*)ifp->ifa_broadaddr;
-                struct in_pktinfo* pktinfo = (struct in_pktinfo*) CMSG_DATA(cmsg);
-
-                msgh.msg_namelen = sizeof(*inaddr);
-
-                cmsg->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
-                cmsg->cmsg_level = IPPROTO_IP;
-                cmsg->cmsg_type = IP_PKTINFO;
-                msgh.msg_controllen = CMSG_SPACE(sizeof(struct in_pktinfo));
-
-                inaddr->sin_family = AF_INET;
-                inaddr->sin_port = htons(PMAPPORT);
-                memcpy(&inaddr->sin_addr, &broadaddr->sin_addr, sizeof(inaddr->sin_addr));
-
-                memcpy(&pktinfo->ipi_spec_dst.s_addr, &srcaddr->sin_addr, sizeof(srcaddr->sin_addr));
-
-                if (inet_ntop(AF_INET, &inaddr->sin_addr, addrbuf, INET6_ADDRSTRLEN) != NULL)
-                    fprintf(stderr, "DST Addr: %s\n", addrbuf);
-
-                sendmsg(udp_socket, &msgh, 0);
-            }
-            if (ifp->ifa_addr->sa_family == AF_INET6) {
-                struct sockaddr_in6* in6addr = (struct sockaddr_in6*)&address;
-                struct sockaddr_in6* src6addr = (struct sockaddr_in6*)ifp->ifa_addr;
-                struct in6_pktinfo* pktinfo = (struct in6_pktinfo*) CMSG_DATA(cmsg);
-
-                msgh.msg_namelen = sizeof(*in6addr);
-
-                cmsg->cmsg_len = CMSG_LEN(sizeof(struct in6_pktinfo));
-                cmsg->cmsg_level = IPPROTO_IPV6;
-                cmsg->cmsg_type = IPV6_PKTINFO;
-                msgh.msg_controllen = CMSG_SPACE(sizeof(struct in6_pktinfo));
-
-                in6addr->sin6_family = AF_INET6;
-                in6addr->sin6_port = htons(PMAPPORT);
-                inet_pton(AF_INET6, "FF02::202", &in6addr->sin6_addr);
-
-                if (src6addr->sin6_scope_id)
-                    pktinfo->ipi6_ifindex = src6addr->sin6_scope_id;
-
-                memcpy(&pktinfo->ipi6_addr, &src6addr->sin6_addr, sizeof(src6addr->sin6_addr));
-
-                if (inet_ntop(AF_INET6, &src6addr->sin6_addr, addrbuf, INET6_ADDRSTRLEN) != NULL)
-                    fprintf(stderr, "SRC Addr: %d %s\n", src6addr->sin6_scope_id, addrbuf);
-
-                sendmsg(udp_socket6, &msgh, 0);
-            }
         }
         freeifaddrs(ifap);
 
@@ -261,6 +294,15 @@ int main(int argc, char* argv[])
         short port;
 
         while (1) {
+            struct sockaddr_storage address;
+            struct msghdr msgh;
+            struct iovec io;
+            struct cmsghdr *cmsg;
+            size_t ctlbuf[128];
+            char srcbuf[INET6_ADDRSTRLEN];
+            char destbuf[INET6_ADDRSTRLEN];
+            int len;
+
             if (select(udp_socket6+1, &fds, 0, 0, &timeout) == 0)
                 break;
 
@@ -292,21 +334,21 @@ int main(int argc, char* argv[])
                         cmsg = CMSG_NXTHDR(&msgh,cmsg)) {
                     if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO) {
                         struct in_pktinfo* pktinfo = (struct in_pktinfo*) CMSG_DATA(cmsg);
-                        if (inet_ntop(AF_INET, &pktinfo->ipi_spec_dst.s_addr, addrbuf, INET6_ADDRSTRLEN) == 0)
-                            addrbuf[0] = '\0';
-                        fprintf(stderr, "Got IP_PKTINFO on %s\n", addrbuf);
+                        if (inet_ntop(AF_INET, &pktinfo->ipi_spec_dst.s_addr, destbuf, INET6_ADDRSTRLEN) == 0)
+                            destbuf[0] = '\0';
+                        fprintf(stderr, "Got IP_PKTINFO on %s\n", destbuf);
                         break;
                     }
                 }
 
                 struct sockaddr_in* inaddr = (struct sockaddr_in*)(&address);
-                if (inet_ntop(AF_INET, &inaddr->sin_addr, addrbuf, INET6_ADDRSTRLEN) == 0)
-                    addrbuf[0] = '\0';
+                if (inet_ntop(AF_INET, &inaddr->sin_addr, srcbuf, INET6_ADDRSTRLEN) == 0)
+                    srcbuf[0] = '\0';
             }
             if (address.ss_family == AF_INET6) {
                 struct sockaddr_in6* in6addr = (struct sockaddr_in6*)(&address);
-                if (inet_ntop(AF_INET6, &in6addr->sin6_addr, addrbuf, INET6_ADDRSTRLEN) == 0)
-                    addrbuf[0] = '\0';
+                if (inet_ntop(AF_INET6, &in6addr->sin6_addr, srcbuf, INET6_ADDRSTRLEN) == 0)
+                    srcbuf[0] = '\0';
 
                 for (cmsg = CMSG_FIRSTHDR(&msgh); cmsg != NULL;
                         cmsg = CMSG_NXTHDR(&msgh,cmsg)) {
@@ -317,7 +359,7 @@ int main(int argc, char* argv[])
                 }
             }
 
-            fprintf(stderr, "'%s' has VXI-11 on port %d\n", addrbuf, port);
+            fprintf(stderr, "'%s' has VXI-11 on port %d\n", srcbuf, port);
         }
 
         if (!port)
