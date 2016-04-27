@@ -66,7 +66,6 @@ void fill_getport_xdr(XDR* xdr, uint32_t prog, uint32_t version, uint32_t proto)
     xdr_int(xdr, &dummy);
 
     assert(xdr_getpos(xdr) == 4*14);
-
 }
 
 void fill_vxi_getport_xdr(XDR* xdr)
@@ -85,8 +84,10 @@ short parse_getport_response(char* buf, size_t len)
     // pull message header
     xdr_replymsg(&xdr, &msg);
 
-    assert(msg.rm_direction == REPLY);
-    assert(msg.rm_reply.rp_stat == MSG_ACCEPTED);
+    if (msg.rm_direction != REPLY)
+        return 0;
+    if (msg.rm_reply.rp_stat != MSG_ACCEPTED)
+        return 0;
 
     int port;
     xdr_int(&xdr, &port);
@@ -125,7 +126,6 @@ reply:
     Accept state: RPC executed successfully (0)
     GETPORT Response:
         Port: variable
-
 #endif
 
 int main(int argc, char* argv[])
