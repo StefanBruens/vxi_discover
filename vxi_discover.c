@@ -51,7 +51,7 @@ void fill_getport_xdr(XDR* xdr, uint32_t prog, uint32_t version, uint32_t proto)
     struct rpc_msg msg = {
         xid,
         CALL,
-        callb,
+        { callb },
     };
 
     assert(xdr_getpos(xdr) == 0);
@@ -60,10 +60,10 @@ void fill_getport_xdr(XDR* xdr, uint32_t prog, uint32_t version, uint32_t proto)
     assert(xdr_getpos(xdr) == 4*10);
 
     // push GETPORT parameters
-    xdr_int(xdr, &prog);
-    xdr_int(xdr, &version);
-    xdr_int(xdr, &proto);
-    xdr_int(xdr, &dummy);
+    xdr_u_int(xdr, &prog);
+    xdr_u_int(xdr, &version);
+    xdr_u_int(xdr, &proto);
+    xdr_u_int(xdr, &dummy);
 
     assert(xdr_getpos(xdr) == 4*14);
 }
@@ -177,7 +177,6 @@ void send_rpc_broadcast_ipv4(int sockfd, struct iovec* io, const struct ifaddrs 
 void send_rpc_broadcast_ipv6(int sockfd, struct iovec* io, const struct ifaddrs *ifp)
 {
     struct sockaddr_in6* srcaddr = (struct sockaddr_in6*)ifp->ifa_addr;
-    struct sockaddr_in6* broadaddr = (struct sockaddr_in6*)ifp->ifa_broadaddr;
     struct sockaddr_in6 destaddr;
     struct msghdr msgh;
     struct cmsghdr *cmsg;
@@ -223,10 +222,9 @@ void send_rpc_broadcast_ipv6(int sockfd, struct iovec* io, const struct ifaddrs 
 
 int main(int argc, char* argv[])
 {
-    struct sockaddr_in sock = {
-        AF_INET, 111, 0 };
-
     if ((argc == 2) && (*argv[1] != '-')) {
+        struct sockaddr_in sock = { AF_INET, 111, { 0 } };
+
         fprintf(stderr, "Sending unicast query to '%s'\n", argv[1]);
         if (inet_aton(argv[1], &sock.sin_addr) == 0) {
             fprintf(stderr, "Invalid address\n");
