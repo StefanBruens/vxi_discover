@@ -264,7 +264,7 @@ int main(int argc, char* argv[])
             if (select(udp_socket6+1, &fds, 0, 0, &timeout) == 0)
                 break;
 
-            if (!FD_ISSET(udp_socket, &fds))
+            if (!FD_ISSET(udp_socket, &fds) && !FD_ISSET(udp_socket6, &fds))
                 continue;
 
             memset(&msgh, 0, sizeof(msgh));
@@ -278,7 +278,10 @@ int main(int argc, char* argv[])
             io.iov_base = &buf;
             io.iov_len = sizeof(buf);
 
-            int len = recvmsg(udp_socket, &msgh, 0);
+            if (FD_ISSET(udp_socket, &fds))
+                len = recvmsg(udp_socket, &msgh, 0);
+            if (FD_ISSET(udp_socket6, &fds))
+                len = recvmsg(udp_socket6, &msgh, 0);
 
             port = parse_getport_response(buf, len);
 
