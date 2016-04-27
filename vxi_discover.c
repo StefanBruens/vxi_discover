@@ -320,7 +320,7 @@ int main(int argc, char* argv[])
 
             if (FD_ISSET(udp_socket, &fds))
                 len = recvmsg(udp_socket, &msgh, 0);
-            if (FD_ISSET(udp_socket6, &fds))
+            else if (FD_ISSET(udp_socket6, &fds))
                 len = recvmsg(udp_socket6, &msgh, 0);
 
             port = parse_getport_response(buf, len);
