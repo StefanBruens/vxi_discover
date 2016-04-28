@@ -133,6 +133,7 @@ void send_rpc_broadcast_ipv4(int sockfd, struct iovec* io, const struct ifaddrs 
 {
     struct sockaddr_in* srcaddr = (struct sockaddr_in*)ifp->ifa_addr;
     struct sockaddr_in* broadaddr = (struct sockaddr_in*)ifp->ifa_broadaddr;
+    struct sockaddr_in* netmask = (struct sockaddr_in*)ifp->ifa_netmask;
     struct sockaddr_in destaddr;
     struct msghdr msgh;
     struct cmsghdr *cmsg;
@@ -161,7 +162,10 @@ void send_rpc_broadcast_ipv4(int sockfd, struct iovec* io, const struct ifaddrs 
     /* Set destination */
     destaddr.sin_family = AF_INET;
     destaddr.sin_port = htons(PMAPPORT);
-    memcpy(&destaddr.sin_addr, &broadaddr->sin_addr, sizeof(destaddr.sin_addr));
+    if (srcaddr->sin_addr.s_addr == broadaddr->sin_addr.s_addr)
+        destaddr.sin_addr.s_addr = srcaddr->sin_addr.s_addr | (~netmask->sin_addr.s_addr);
+    else
+        destaddr.sin_addr.s_addr = broadaddr->sin_addr.s_addr;
 
     /* Set source */
     pktinfo = (struct in_pktinfo*) CMSG_DATA(cmsg);
