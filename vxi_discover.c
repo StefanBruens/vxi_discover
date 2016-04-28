@@ -279,7 +279,7 @@ int main(int argc, char* argv[])
             if (ifp->ifa_addr->sa_family == AF_INET)
                 send_rpc_broadcast_ipv4(udp_socket, &io, ifp);
             else if (ifp->ifa_addr->sa_family == AF_INET6)
-                send_rpc_broadcast_ipv6(udp_socket, &io, ifp);
+                send_rpc_broadcast_ipv6(udp_socket6, &io, ifp);
 
         }
         freeifaddrs(ifap);
