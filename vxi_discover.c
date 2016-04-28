@@ -289,7 +289,7 @@ int main(int argc, char* argv[])
         FD_ZERO(&fds);
         FD_SET(udp_socket, &fds);
         FD_SET(udp_socket6, &fds);
-        short port;
+        short port = 0;
 
         while (1) {
             struct sockaddr_storage address;
